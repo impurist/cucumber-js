@@ -1,8 +1,8 @@
-require.paths.unshift('../lib');
+require.paths.unshift(__dirname + '/../../lib');
 
 beforeEach(function() {
   this.addMatchers({
-    toBeAFunction:          function()          { return typeof(this.actual) == 'function'; },
+    toBeAFunction: function() { return typeof(this.actual) == 'function'; },
 
     toHaveBeenCalledNTimes: function(callCount) { return callCount == this.actual.callCount; },
 
@@ -32,7 +32,11 @@ beforeEach(function() {
           return true;
       }
       return false;
-    }
+    },
+
+    toHaveBeenRequired: function() {
+      return this.actual.requireCount > 0;
+    },
   });
 });
 
@@ -74,10 +78,41 @@ createEmittingSpy = function(name) {
 };
 
 jasmine.Spy.prototype.andReturnSeveral = function(values) {
+  var count = 0;
   this.plan = function() {
-    if (typeof(this.count) === 'undefined')
-      this.count = 0;
-    return values[this.count++];
+    return values[count++];
   };
   return this;
 };
+
+var moduleSpies = {};
+var originalJsLoader = require.extensions['.js'];
+
+spyOnModule = function spyOnModule(module) {
+  var spy           = createSpy("spy on module \"" + module + "\"");
+  spy.requireCount  = 0;
+  return spyOnModuleAndReturn(module, spy);
+};
+
+spyOnModuleAndReturn = function spyOnModuleAndReturn(module, spy) {
+  var path          = require.resolve(module);
+  moduleSpies[path] = spy;
+  delete require.cache[path];
+  return spy;
+};
+
+require.extensions['.js'] = function (obj, path) {
+  var spy = moduleSpies[path];
+  if (spy) {
+    spy.requireCount++;
+    obj.exports = spy;
+  } else {
+    return originalJsLoader(obj, path);
+  }
+}
+
+afterEach(function() {
+  for (var path in moduleSpies) {
+    delete moduleSpies[path];
+  }
+});

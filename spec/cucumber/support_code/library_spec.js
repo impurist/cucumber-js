@@ -4,78 +4,71 @@ describe("Cucumber.SupportCode.Library", function() {
   var Cucumber = require('cucumber');
   var library, rawSupportCode;
   var stepDefinitionCollection;
+  var worldConstructor;
   var spiesDuringSupportCodeDefinitionExecution = {};
+  var worldConstructorCalled;
 
   beforeEach(function() {
-    rawSupportCode = createSpy("Raw support code").andCallFake(function() {
-      spiesDuringSupportCodeDefinitionExecution['Given'] = (typeof(Given) !== 'undefined' ? Given : undefined);
-      spiesDuringSupportCodeDefinitionExecution['When']  = (typeof(When)  !== 'undefined' ? When  : undefined);
-      spiesDuringSupportCodeDefinitionExecution['Then']  = (typeof(Then)  !== 'undefined' ? Then  : undefined);
-    });
+    rawSupportCode = createSpy("Raw support code");
     stepDefinitionCollection = [
       createSpyWithStubs("First step definition",  {matchesStepName:false}),
       createSpyWithStubs("Second step definition", {matchesStepName:false}),
       createSpyWithStubs("Third step definition",  {matchesStepName:false})
     ];
+    worldConstructorCalled = false;
+    worldConstructor = function() { worldConstructorCalled = true; };
     spyOnStub(stepDefinitionCollection, 'syncForEach').andCallFake(function(cb) { stepDefinitionCollection.forEach(cb); });
     spyOn(Cucumber.Type, 'Collection').andReturn(stepDefinitionCollection);
+    spyOn(Cucumber.SupportCode, 'WorldConstructor').andReturn(worldConstructor);
+    library = Cucumber.SupportCode.Library(rawSupportCode);
   });
 
   describe("constructor", function() {
     it("creates a collection of step definitions", function() {
-      library = Cucumber.SupportCode.Library(rawSupportCode);
       expect(Cucumber.Type.Collection).toHaveBeenCalled();
     });
 
-    describe("before executing the raw support code", function() {
-      beforeEach(function() {
-        library = Cucumber.SupportCode.Library(rawSupportCode);
-      });
-
-      it("binds the global 'Given' to the library", function() {
-        var given = spiesDuringSupportCodeDefinitionExecution['Given'];
-        expect(given).toBeAFunction();
-        expect(given).toBe(library.defineGivenStep);
-      });
-
-      it("binds the global 'When' to the library", function() {
-        var given = spiesDuringSupportCodeDefinitionExecution['When'];
-        expect(given).toBeAFunction();
-        expect(given).toBe(library.defineWhenStep);
-      });
-
-      it("binds the global 'Then' to the library", function() {
-        var given = spiesDuringSupportCodeDefinitionExecution['Then'];
-        expect(given).toBeAFunction();
-        expect(given).toBe(library.defineThenStep);
-      });
-    });
-
     it("executes the raw support code", function() {
-      library = Cucumber.SupportCode.Library(rawSupportCode);
       expect(rawSupportCode).toHaveBeenCalled();
     });
 
-    describe("after executing the raw support code", function() {
-      it("restores the global 'Given' to its original value", function() {
-        var originalGiven = createSpy("Original Given");
-        Given             = originalGiven;
-        Cucumber.SupportCode.Library(rawSupportCode);
-        expect(Given).toBe(originalGiven);
+    it("creates a new World constructor", function() {
+      expect(Cucumber.SupportCode.WorldConstructor).toHaveBeenCalled();
+    });
+
+    it("executes the raw support code with a support code helper as 'this'", function() {
+      expect(rawSupportCode.mostRecentCall.object).toBeDefined();
+    });
+
+    describe("code support helper", function() {
+      var supportCodeHelper;
+
+      beforeEach(function() {
+        supportCodeHelper = rawSupportCode.mostRecentCall.object;
       });
 
-      it("restores the global 'When' to its original value", function() {
-        var originalWhen = createSpy("Original When");
-        When             = originalWhen;
-        Cucumber.SupportCode.Library(rawSupportCode);
-        expect(When).toBe(originalWhen);
+      it("exposes a method to define Given steps", function() {
+        expect(supportCodeHelper.Given).toBeAFunction();
+        expect(supportCodeHelper.Given).toBe(library.defineStep);
       });
 
-      it("restores the global 'Then' to its original value", function() {
-        var originalThen = createSpy("Original Then");
-        Then             = originalThen;
-        Cucumber.SupportCode.Library(rawSupportCode);
-        expect(Then).toBe(originalThen);
+      it("exposes a method to define When steps", function() {
+        expect(supportCodeHelper.When).toBeAFunction();
+        expect(supportCodeHelper.When).toBe(library.defineStep);
+      });
+
+      it("exposes a method to define Then steps", function() {
+        expect(supportCodeHelper.Then).toBeAFunction();
+        expect(supportCodeHelper.Then).toBe(library.defineStep);
+      });
+
+      it("exposes a method to define any step", function() {
+        expect(supportCodeHelper.defineStep).toBeAFunction();
+        expect(supportCodeHelper.defineStep).toBe(library.defineStep);
+      });
+
+      it("exposes the World constructor", function() {
+        expect(supportCodeHelper.World).toBe(worldConstructor);
       });
     });
   });
@@ -96,7 +89,7 @@ describe("Cucumber.SupportCode.Library", function() {
     });
 
     it("returns the step definition that matches the name", function() {
-      var matchingStepDefinition  = stepDefinitionCollection[1];
+      var matchingStepDefinition = stepDefinitionCollection[1];
       matchingStepDefinition.matchesStepName.andReturn(true);
       expect(library.lookupStepDefinitionByName(stepName)).toBe(matchingStepDefinition);
     });
@@ -139,34 +132,48 @@ describe("Cucumber.SupportCode.Library", function() {
     });
   });
 
-  function describeStepDefiner(methodName) {
-    describe(methodName + "()", function() {
-      var stepRegexp, stepCode;
-      var stepDefinition;
+  describe("defineStep()", function() {
+    var name, code, stepDefinition;
 
-      beforeEach(function() {
-        library        = Cucumber.SupportCode.Library(rawSupportCode);
-        stepRegexp     = createSpy("Step name");
-        stepCode       = createSpy("Step code");
-        stepDefinition = createSpy("Step definition");
-        spyOn(Cucumber.SupportCode, 'StepDefinition').andReturn(stepDefinition);
-        spyOnStub(stepDefinitionCollection, 'add');
-      });
+    beforeEach(function() {
+      name           = createSpy("step definition name");
+      code           = createSpy("step definition code");
+      stepDefinition = createSpy("step definition");
+      spyOn(Cucumber.SupportCode, 'StepDefinition').andReturn(stepDefinition);
+      spyOnStub(stepDefinitionCollection, 'add');
+    });
 
-      it("creates a step definition", function() {
-        library[methodName](stepRegexp, stepCode);
-        expect(Cucumber.SupportCode.StepDefinition).toHaveBeenCalledWith(stepRegexp, stepCode);
-      });
+    it("creates a step definition with the name and code", function() {
+      library.defineStep(name, code);
+      expect(Cucumber.SupportCode.StepDefinition).toHaveBeenCalledWith(name, code);
+    });
 
-      it("adds the step definition to the step definition collection", function() {
-        library[methodName](stepRegexp, stepCode);
-        expect(stepDefinitionCollection.add).toHaveBeenCalledWith(stepDefinition);
+    it("adds the step definition to the step collection", function() {
+      library.defineStep(name, code);
+      expect(stepDefinitionCollection.add).toHaveBeenCalledWith(stepDefinition);
+    });
+  });
+
+  describe("instantiateNewWorld()", function() {
+    it("creates a new instance of the World", function() {
+      library.instantiateNewWorld();
+      expect(worldConstructorCalled).toBeTruthy();
+    });
+
+    it("returns the instance of the World", function() {
+      var worldInstance = library.instantiateNewWorld();
+      expect(worldInstance.constructor).toBe(worldConstructor);
+    });
+
+    describe("when the default World constructor is replaced by a custom one", function() {
+      it("instantiates custom Worlds", function() {
+        var customWorldConstructor = function customWorldConstructor() {};
+        rawSupportCode             = function() { this.World = customWorldConstructor; };
+        library                    = Cucumber.SupportCode.Library(rawSupportCode);
+        var worldInstance = library.instantiateNewWorld();
+        expect(worldInstance.constructor).toBe(customWorldConstructor);
       });
     });
-  };
-
-  describeStepDefiner('defineGivenStep');
-  describeStepDefiner('defineWhenStep');
-  describeStepDefiner('defineThenStep');
+  });
 });
 
