@@ -84,6 +84,7 @@ export default class ArgvParser {
         []
       )
       .option('--no-strict', 'succeed even if there are pending steps')
+      .option('--wip', 'Fail if there are any passing scenarios.')
       .option(
         '-p, --profile <NAME>',
         'specify the profile to use (repeatable)',

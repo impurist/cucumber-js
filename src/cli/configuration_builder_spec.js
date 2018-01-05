@@ -44,6 +44,7 @@ describe('Configuration', function() {
           failFast: false,
           filterStacktraces: true,
           strict: true,
+          wip: false,
           worldParameters: {}
         },
         supportCodePaths: []

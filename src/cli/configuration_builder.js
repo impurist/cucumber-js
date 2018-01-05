@@ -56,6 +56,7 @@ export default class ConfigurationBuilder {
         failFast: !!this.options.failFast,
         filterStacktraces: !this.options.backtrace,
         strict: !!this.options.strict,
+        wip: !!this.options.wip,
         worldParameters: this.options.worldParameters
       },
       supportCodePaths
